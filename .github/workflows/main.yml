@@ -1,8 +1,59 @@
-- name: Install Supabase CLI
-  run: npm install -g supabase
+name: Deploy to Supabase
 
-- name: Deploy to Supabase
-  env:
-    SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-    SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-  run: supabase deploy --project-ref $SUPABASE_PROJECT_REF
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: supabase-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      # REQUIRED: set these in Settings → Secrets and variables → Actions
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      # The CLI also supports SUPABASE_ACCESS_TOKEN; set it here so the CLI picks it up if needed
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Show Node and npm versions
+        run: |
+          node -v
+          npm -v
+
+      - name: Install Supabase CLI
+        run: npm install -g supabase@latest
+
+      - name: Verify Supabase CLI
+        run: supabase --version
+
+      - name: Login to Supabase (non-interactive)
+        # non-interactive login so the CLI has an auth token for the deploy command
+        run: supabase login --token "$SUPABASE_SERVICE_ROLE_KEY"
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+
+      - name: Deploy to Supabase
+        run: |
+          # Adjust flags if you only want to deploy specific targets (e.g. --project-ref, --db-only)
+          supabase deploy --project-ref "$SUPABASE_PROJECT_REF" --yes
+        env:
+          SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
