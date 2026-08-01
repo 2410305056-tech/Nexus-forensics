@@ -37,6 +37,15 @@ Complete step-by-step guide to integrate Supabase with your Nexus Forensics cont
 
 ## **2. CREATE DATABASE TABLES**
 
+### ⚠️ **IMPORTANT: FIRST, DROP OLD TABLE (IF EXISTS)**
+
+Go to **SQL Editor** and run:
+
+```sql
+-- Drop old incomplete table if it exists
+DROP TABLE IF EXISTS public.inquiries CASCADE;
+```
+
 ### **Step 2A: Open SQL Editor**
 1. In Supabase dashboard, click **"SQL Editor"** (left sidebar)
 2. Click **"New Query"**
@@ -47,7 +56,7 @@ Complete step-by-step guide to integrate Supabase with your Nexus Forensics cont
 -- NEXUS FORENSICS — CONTACT FORM TABLE
 -- ═══════════════════════════════════════════════════════════
 
-CREATE TABLE public.inquiries (
+CREATE TABLE IF NOT EXISTS public.inquiries (
   id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
   name TEXT NOT NULL,
   email TEXT NOT NULL,
@@ -59,11 +68,13 @@ CREATE TABLE public.inquiries (
 );
 
 -- Add indexes for faster queries
-CREATE INDEX idx_inquiries_email ON public.inquiries(email);
-CREATE INDEX idx_inquiries_created_at ON public.inquiries(created_at);
+CREATE INDEX IF NOT EXISTS idx_inquiries_email ON public.inquiries(email);
+CREATE INDEX IF NOT EXISTS idx_inquiries_created_at ON public.inquiries(created_at);
 
 -- Add comments
 COMMENT ON TABLE public.inquiries IS 'Contact form submissions from Nexus Forensics website';
+COMMENT ON COLUMN public.inquiries.priority IS 'Priority level: standard, high, critical';
+COMMENT ON COLUMN public.inquiries.case_type IS 'Type of investigation case';
 ```
 
 4. Click **"Run"** (blue button)
@@ -73,34 +84,35 @@ COMMENT ON TABLE public.inquiries IS 'Contact form submissions from Nexus Forens
 
 ## **3. CONFIGURE ROW LEVEL SECURITY (RLS)**
 
-### **Step 3A: Enable RLS on `inquiries` table**
-1. Go to **"Authentication"** → **"Policies"** (left sidebar)
-2. Click on **"inquiries"** table
-3. Click **"Enable RLS"** (if not already enabled)
+### **Step 3A: Enable RLS and Add Policies**
 
-### **Step 3B: Create Insert Policy (Allow Public)**
-Click **"New Policy"** and paste:
+Run this SQL in the SQL Editor:
 
 ```sql
+-- ═══════════════════════════════════════════════════════════
+-- ROW LEVEL SECURITY SETUP
+-- ═══════════════════════════════════════════════════════════
+
+-- Enable RLS on inquiries table
+ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
+
+-- Policy 1: Allow anyone (anonymous) to INSERT
 CREATE POLICY "Allow public inserts" ON public.inquiries
   FOR INSERT
   WITH CHECK (true);
-```
 
-### **Step 3C: Create Select Policy (Allow Authenticated Only)**
-```sql
+-- Policy 2: Allow authenticated users to READ their own submissions
 CREATE POLICY "Allow authenticated users to read" ON public.inquiries
   FOR SELECT
   USING (auth.role() = 'authenticated');
+
+-- Policy 3: Allow admins to read all
+CREATE POLICY "Allow admins to read all" ON public.inquiries
+  FOR SELECT
+  USING (auth.role() = 'service_role');
 ```
 
-### **Step 3D: Alternative - Quick Setup via UI**
-If SQL is confusing, use the UI:
-1. Go to **"Authentication"** tab
-2. Scroll to **"inquiries"** table
-3. Click **"Create policy"**
-4. Select: **"Allow INSERT for anonymous users"**
-5. Click **"Review"** → **"Save"**
+Click **"Run"**. Done! ✅
 
 ---
 
@@ -144,7 +156,7 @@ Add this at the **TOP of script.js** (before line 1):
 ```javascript
 // ═══════════════════════════════════════════════════════════
 // SUPABASE INITIALIZATION
-// ═════════════════════════════════════���═════════════════════
+// ═══════════════════════════════════════════════════════════
 
 // TODO: Replace with your actual keys from Supabase dashboard
 const SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
@@ -210,8 +222,7 @@ if (contactForm) {
                         organization: org || null,
                         case_type: type,
                         priority: priority,
-                        message: message,
-                        created_at: new Date().toISOString()
+                        message: message
                     }
                 ]);
             
@@ -274,11 +285,25 @@ if (contactForm) {
    - `YOUR_PROJECT_REF` → Your actual project ref (e.g., `abcdefg123`)
    - `YOUR_ANON_KEY_HERE` → Your actual anon key
 
-### **Step 6B: Deploy & Test**
+### **Step 6B: Test in Supabase First**
+
+Go to SQL Editor and run:
+
+```sql
+SET LOCAL role anon;
+INSERT INTO public.inquiries (name, email, case_type, priority, message)
+VALUES ('Test User', 'test@example.com', 'cyber', 'standard', 'This is a test')
+RETURNING id, created_at;
+```
+
+✅ If this returns an ID → RLS is working!
+❌ If error → Check your policies
+
+### **Step 6C: Deploy & Test**
 1. Push changes to GitHub:
    ```bash
-   git add index.html script.js
-   git commit -m "Add Supabase integration"
+   git add index.html script.js SUPABASE_SETUP.md
+   git commit -m "Add Supabase integration with corrected schema"
    git push origin main
    ```
 
@@ -298,7 +323,7 @@ if (contactForm) {
 
 6. Button should show: `✓ TRANSMISSION COMPLETE` ✅
 
-### **Step 6C: Verify in Supabase**
+### **Step 6D: Verify in Supabase**
 1. Go to Supabase Dashboard
 2. Click **"Table Editor"** (left sidebar)
 3. Select **"inquiries"** table
@@ -310,6 +335,9 @@ if (contactForm) {
 
 ### **Problem: "Cannot find Supabase"**
 **Solution:** Make sure you added the Supabase script to `index.html` before `</head>`
+
+### **Problem: "column does not exist"**
+**Solution:** Run the DROP TABLE query first, then recreate with the corrected SQL above
 
 ### **Problem: "401 Unauthorized"**
 **Solution:** Your anon key is wrong. Check:
@@ -343,7 +371,8 @@ CREATE POLICY "Allow public inserts" ON public.inquiries
 
 - [ ] Supabase account created
 - [ ] Project created
-- [ ] `inquiries` table created
+- [ ] Old `inquiries` table dropped
+- [ ] New `inquiries` table created with correct columns
 - [ ] RLS policies added
 - [ ] API URL copied
 - [ ] Anon key copied
@@ -351,6 +380,7 @@ CREATE POLICY "Allow public inserts" ON public.inquiries
 - [ ] script.js updated with keys
 - [ ] Contact form handler replaced
 - [ ] Code pushed to GitHub
+- [ ] SQL test passed (anon insert works)
 - [ ] Test form submission works
 - [ ] Data appears in Supabase table
 
