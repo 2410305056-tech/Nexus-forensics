@@ -1,19 +1,24 @@
 // Supabase client initialization for Nexus Forensics
-// Reads config from Vite env vars (exposed as window.VITE_* in this static setup)
+// Waits for the CDN SDK to load, then creates the client.
 
-const SUPABASE_URL = window.VITE_SUPABASE_URL || import.meta?.env?.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = window.VITE_SUPABASE_ANON_KEY || import.meta?.env?.VITE_SUPABASE_ANON_KEY;
+(function () {
+  const SUPABASE_URL = window.VITE_SUPABASE_URL;
+  const SUPABASE_ANON_KEY = window.VITE_SUPABASE_ANON_KEY;
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('[Nexus] Supabase configuration missing. Check your .env file.');
-}
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    console.error('[Nexus] Supabase configuration missing. Check your .env file.');
+    window.nexusSupabase = null;
+    return;
+  }
 
-const supabase = (window.supabase && window.supabase.createClient)
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  : null;
+  function init() {
+    if (!window.supabase || !window.supabase.createClient) {
+      // SDK not loaded yet, retry shortly
+      return setTimeout(init, 50);
+    }
+    window.nexusSupabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    console.log('[Nexus] Supabase client connected.');
+  }
 
-if (!supabase) {
-  console.error('[Nexus] Supabase SDK failed to load.');
-}
-
-window.nexusSupabase = supabase;
+  init();
+})();
