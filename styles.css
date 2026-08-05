@@ -773,6 +773,9 @@ img { max-width: 100%; display: block; }
 .priority-option input:checked + .priority-high { border-color: var(--accent-warning); color: var(--accent-warning); background: rgba(255,170,0,0.05); }
 .priority-option input:checked + .priority-critical { border-color: var(--accent-danger); color: var(--accent-danger); background: rgba(255,51,102,0.05); }
 .form-notice { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); letter-spacing: 1px; text-align: center; margin-top: 4px; }
+.form-message { font-family: var(--font-mono); font-size: 12px; letter-spacing: 1px; text-align: center; margin-top: 12px; padding: 10px 14px; border-radius: 6px; }
+.form-message.success { color: #00ff88; background: rgba(0, 255, 136, 0.08); border: 1px solid rgba(0, 255, 136, 0.25); }
+.form-message.error { color: #ff4466; background: rgba(255, 68, 102, 0.08); border: 1px solid rgba(255, 68, 102, 0.25); }
 
 /* ─── Footer ─── */
 .footer {

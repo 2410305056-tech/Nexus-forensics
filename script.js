@@ -499,38 +499,84 @@ document.querySelectorAll('.faq-question').forEach(btn => {
 });
 
 // ─────────────────────────────────────────────
-// CONTACT FORM
+// CONTACT FORM — submits to Supabase
 // ─────────────────────────────────────────────
 const contactForm = document.getElementById('contact-form');
 if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
+    contactForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const btn = document.getElementById('submit-btn');
         const btnText = btn.querySelector('.btn-text');
         const original = btnText.textContent;
+        const formMsg = document.getElementById('form-message');
 
         btnText.textContent = 'ENCRYPTING...';
         btn.style.pointerEvents = 'none';
 
-        setTimeout(() => {
-            btnText.textContent = 'TRANSMITTING...';
-            setTimeout(() => {
-                btnText.textContent = '✓ TRANSMISSION COMPLETE';
-                btn.style.background = 'rgba(0, 255, 136, 0.15)';
-                btn.style.color = '#00ff88';
-                btn.style.border = '1px solid rgba(0, 255, 136, 0.3)';
+        const priorityChecked = document.querySelector('input[name="priority"]:checked');
+        const formData = {
+            name: document.getElementById('contact-name')?.value?.trim() || '',
+            email: document.getElementById('contact-email')?.value?.trim() || '',
+            organization: document.getElementById('contact-org')?.value?.trim() || '',
+            case_type: document.getElementById('contact-type')?.value?.trim() || '',
+            priority: priorityChecked ? priorityChecked.value : 'standard',
+            message: document.getElementById('contact-message')?.value?.trim() || '',
+        };
 
-                setTimeout(() => {
-                    btnText.textContent = original;
-                    btn.style.pointerEvents = '';
-                    btn.style.background = '';
-                    btn.style.color = '';
-                    btn.style.border = '';
-                    contactForm.reset();
-                }, 3000);
-            }, 1000);
-        }, 800);
+        if (!formData.name || !formData.email || !formData.message) {
+            showFormMessage(formMsg, 'Please fill in all required fields.', 'error');
+            btnText.textContent = original;
+            btn.style.pointerEvents = '';
+            return;
+        }
+
+        const supabase = window.nexusSupabase;
+
+        if (!supabase) {
+            showFormMessage(formMsg, 'Connection to database failed. Please try again later.', 'error');
+            btnText.textContent = original;
+            btn.style.pointerEvents = '';
+            return;
+        }
+
+        btnText.textContent = 'TRANSMITTING...';
+
+        try {
+            const { error } = await supabase
+                .from('inquiries')
+                .insert([formData]);
+
+            if (error) throw error;
+
+            btnText.textContent = '✓ TRANSMISSION COMPLETE';
+            btn.style.background = 'rgba(0, 255, 136, 0.15)';
+            btn.style.color = '#00ff88';
+            btn.style.border = '1px solid rgba(0, 255, 136, 0.3)';
+            showFormMessage(formMsg, 'Your case submission has been received and queued for analysis.', 'success');
+
+            setTimeout(() => {
+                btnText.textContent = original;
+                btn.style.pointerEvents = '';
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.style.border = '';
+                contactForm.reset();
+                if (formMsg) formMsg.textContent = '';
+            }, 4000);
+        } catch (err) {
+            console.error('[Nexus] Form submission error:', err);
+            showFormMessage(formMsg, 'Transmission failed: ' + (err.message || 'Unknown error'), 'error');
+            btnText.textContent = original;
+            btn.style.pointerEvents = '';
+        }
     });
+}
+
+function showFormMessage(el, msg, type) {
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'form-message ' + (type || '');
+    el.style.display = 'block';
 }
 
 // ─────────────────────────────────────────────
