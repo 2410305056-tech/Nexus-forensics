@@ -1,406 +1,182 @@
-# 🔐 SUPABASE SETUP PROTOCOL — Nexus Forensics
+# 🔐 Supabase + Backend Setup — Nexus Forensics
 
-Complete step-by-step guide to integrate Supabase with your Nexus Forensics contact form.
-
----
-
-## **📋 TABLE OF CONTENTS**
-
-1. [Supabase Account Setup](#1-supabase-account-setup)
-2. [Create Database Tables](#2-create-database-tables)
-3. [Configure Row Level Security (RLS)](#3-configure-row-level-security-rls)
-4. [Get API Keys](#4-get-api-keys)
-5. [Update Frontend Code](#5-update-frontend-code)
-6. [Test Integration](#6-test-integration)
-7. [Troubleshooting](#7-troubleshooting)
+How the contact form reaches the database, and how to stand it up from scratch.
 
 ---
 
-## **1. SUPABASE ACCOUNT SETUP**
+## Architecture
 
-### **Step 1A: Create Supabase Account**
-1. Go to **https://supabase.com**
-2. Click **"Sign Up"**
-3. Use your email (recommended: `ops@nexusforensics.io`)
-4. Verify email
-5. Create password
+```
+browser  ──POST /api/inquiries──▶  serverless function  ──service_role──▶  Supabase Postgres
+         ◀──201 {ok:true}────────   (api/inquiries.js)                      public.inquiries
+```
 
-### **Step 1B: Create New Project**
-1. Click **"New Project"**
-2. **Project name:** `Nexus-Forensics`
-3. **Database password:** Save this securely! ⚠️
-4. **Region:** Choose closest to your users (e.g., `us-east-1`)
-5. Click **"Create new project"**
-6. Wait 2-3 minutes for setup
+The browser holds **no database credential**. It talks only to `/api/inquiries`.
+The function holds the `service_role` key server-side, which bypasses RLS.
+
+Why: a contact form carrying sensitive case details should not let the public write
+to Postgres directly. Routing through the function buys input validation, a honeypot,
+throttling, and the ability to lock `anon` out of the database entirely.
 
 ---
 
-## **2. CREATE DATABASE TABLES**
+## 1. Create the Supabase project
 
-### ⚠️ **IMPORTANT: FIRST, DROP OLD TABLE (IF EXISTS)**
+1. Go to **https://supabase.com** and sign in
+2. **New Project** — name it `Nexus-Forensics`, pick the region closest to your users
+3. Save the **database password** somewhere safe
 
-Go to **SQL Editor** and run:
-
-```sql
--- Drop old incomplete table if it exists
-DROP TABLE IF EXISTS public.inquiries CASCADE;
-```
-
-### **Step 2A: Open SQL Editor**
-1. In Supabase dashboard, click **"SQL Editor"** (left sidebar)
-2. Click **"New Query"**
-3. Copy & paste the SQL below:
-
-```sql
--- ═══════════════════════════════════════════════════════════
--- NEXUS FORENSICS — CONTACT FORM TABLE
--- ═══════════════════════════════════════════════════════════
-
-CREATE TABLE IF NOT EXISTS public.inquiries (
-  id BIGINT PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  organization TEXT,
-  case_type TEXT,
-  priority TEXT DEFAULT 'standard',
-  message TEXT NOT NULL,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Add indexes for faster queries
-CREATE INDEX IF NOT EXISTS idx_inquiries_email ON public.inquiries(email);
-CREATE INDEX IF NOT EXISTS idx_inquiries_created_at ON public.inquiries(created_at);
-
--- Add comments
-COMMENT ON TABLE public.inquiries IS 'Contact form submissions from Nexus Forensics website';
-COMMENT ON COLUMN public.inquiries.priority IS 'Priority level: standard, high, critical';
-COMMENT ON COLUMN public.inquiries.case_type IS 'Type of investigation case';
-```
-
-4. Click **"Run"** (blue button)
-5. Success! ✅ Table created
+> The previous project (`ylbidjnuxghyzrngehwz`) was deleted — its hostname no longer
+> resolves. Nothing can be recovered from it, so treat this as a fresh start.
 
 ---
 
-## **3. CONFIGURE ROW LEVEL SECURITY (RLS)**
+## 2. Apply the schema
 
-### **Step 3A: Enable RLS and Add Policies**
+There is exactly one migration: `supabase/migrations/20260731000000_init_schema.sql`.
 
-Run this SQL in the SQL Editor:
+**Option A — automatic, via GitHub Actions (recommended)**
 
-```sql
--- ═══════════════════════════════════════════════════════════
--- ROW LEVEL SECURITY SETUP
--- ═══════════════════════════════════════════════════════════
+Add the three repository secrets from step 5, then push to `main`. The workflow
+`.github/workflows/main.yml` runs `supabase link` and then `supabase db push`.
 
--- Enable RLS on inquiries table
-ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
+**Option B — paste into the SQL Editor**
 
--- Policy 1: Allow anyone (anonymous) to INSERT
-CREATE POLICY "Allow public inserts" ON public.inquiries
-  FOR INSERT
-  WITH CHECK (true);
+Open the migration file, copy everything, paste into **SQL Editor → New Query → Run**.
 
--- Policy 2: Allow authenticated users to READ their own submissions
-CREATE POLICY "Allow authenticated users to read" ON public.inquiries
-  FOR SELECT
-  USING (auth.role() = 'authenticated');
+**Option C — Supabase CLI locally**
 
--- Policy 3: Allow admins to read all
-CREATE POLICY "Allow admins to read all" ON public.inquiries
-  FOR SELECT
-  USING (auth.role() = 'service_role');
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
 ```
 
-Click **"Run"**. Done! ✅
+Whichever you pick, verify in **Table Editor** — you should see `inquiries` and
+`ai_chat_logs`.
 
 ---
 
-## **4. GET API KEYS**
+## 3. Get credentials
 
-### **Step 4A: Find Your Project URL**
-1. Click **"Project Settings"** (bottom left gear icon)
-2. Click **"API"** tab
-3. Copy **"Project URL"** (looks like: `https://xxxxx.supabase.co`)
-4. Save this as `SUPABASE_URL`
+In **Project Settings → API**:
 
-### **Step 4B: Get Your Anon Key**
-1. In same **"API"** tab
-2. Find section **"Project API keys"**
-3. Copy the key labeled **"anon public"** (starts with `eyJh...`)
-4. Save this as `SUPABASE_ANON_KEY`
+| Value | Goes where | Secret? |
+|---|---|---|
+| Project URL | `SUPABASE_URL` | no |
+| `service_role` key | `SUPABASE_SERVICE_ROLE_KEY` | **YES — server-side only** |
+| `anon` / `publishable` key | not used | — |
 
-⚠️ **IMPORTANT:** Keep these secret! Add to `.env` or `.env.local` file
+The `anon` key is no longer needed anywhere — the frontend does not use the Supabase
+SDK at all. **Never** put the `service_role` key in `index.html` or any client-side
+file; it bypasses RLS and grants full read/write on your database.
 
----
+Generate the admin token:
 
-## **5. UPDATE FRONTEND CODE**
-
-### **Step 5A: Add Supabase Script to index.html**
-
-Find line **20** in `index.html`:
-```html
-<link rel="icon" type="image/png" href="icons/icon-192.png">
-```
-
-Add this AFTER line 20:
-```html
-<!-- Supabase -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-```
-
-### **Step 5B: Update script.js with Supabase Config**
-
-Add this at the **TOP of script.js** (before line 1):
-
-```javascript
-// ═══════════════════════════════════════════════════════════
-// SUPABASE INITIALIZATION
-// ═══════════════════════════════════════════════════════════
-
-// TODO: Replace with your actual keys from Supabase dashboard
-const SUPABASE_URL = 'https://YOUR_PROJECT_REF.supabase.co';
-const SUPABASE_ANON_KEY = 'YOUR_ANON_KEY_HERE';
-
-const { createClient } = window.supabase;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-console.log('✓ Supabase initialized');
-```
-
-### **Step 5C: Replace Contact Form Handler**
-
-Find this section in `script.js` (around line 504-534):
-
-```javascript
-const contactForm = document.getElementById('contact-form');
-if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
-        e.preventDefault();
-        // OLD CODE HERE
-    });
-}
-```
-
-**Replace entire block with:**
-
-```javascript
-const contactForm = document.getElementById('contact-form');
-if (contactForm) {
-    contactForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const btn = document.getElementById('submit-btn');
-        const btnText = btn.querySelector('.btn-text');
-        const original = btnText.textContent;
-        
-        // Collect form data
-        const name = document.getElementById('contact-name').value.trim();
-        const email = document.getElementById('contact-email').value.trim();
-        const org = document.getElementById('contact-org').value.trim();
-        const type = document.getElementById('contact-type').value;
-        const priority = document.querySelector('input[name="priority"]:checked').value;
-        const message = document.getElementById('contact-message').value.trim();
-        
-        // Validation
-        if (!name || !email || !type || !message) {
-            alert('❌ Please fill all required fields');
-            return;
-        }
-        
-        btnText.textContent = 'ENCRYPTING...';
-        btn.style.pointerEvents = 'none';
-        
-        try {
-            // Insert into Supabase
-            const { data, error } = await supabase
-                .from('inquiries')
-                .insert([
-                    {
-                        name: name,
-                        email: email,
-                        organization: org || null,
-                        case_type: type,
-                        priority: priority,
-                        message: message
-                    }
-                ]);
-            
-            if (error) {
-                console.error('❌ Supabase error:', error);
-                btnText.textContent = '✗ FAILED';
-                btn.style.background = 'rgba(255, 51, 102, 0.15)';
-                btn.style.color = '#ff3366';
-                setTimeout(() => {
-                    btnText.textContent = original;
-                    btn.style.pointerEvents = '';
-                    btn.style.background = '';
-                    btn.style.color = '';
-                }, 3000);
-                return;
-            }
-            
-            // Success animation
-            btnText.textContent = 'TRANSMITTING...';
-            setTimeout(() => {
-                btnText.textContent = '✓ TRANSMISSION COMPLETE';
-                btn.style.background = 'rgba(0, 255, 136, 0.15)';
-                btn.style.color = '#00ff88';
-                btn.style.border = '1px solid rgba(0, 255, 136, 0.3)';
-                
-                setTimeout(() => {
-                    btnText.textContent = original;
-                    btn.style.pointerEvents = '';
-                    btn.style.background = '';
-                    btn.style.color = '';
-                    btn.style.border = '';
-                    contactForm.reset();
-                    console.log('✓ Form submitted successfully');
-                }, 3000);
-            }, 1000);
-            
-        } catch (err) {
-            console.error('❌ Error:', err);
-            btnText.textContent = '✗ ERROR';
-            btn.style.background = 'rgba(255, 51, 102, 0.15)';
-            btn.style.color = '#ff3366';
-            setTimeout(() => {
-                btnText.textContent = original;
-                btn.style.pointerEvents = '';
-                btn.style.background = '';
-                btn.style.color = '';
-            }, 3000);
-        }
-    });
-}
+```bash
+openssl rand -hex 32
 ```
 
 ---
 
-## **6. TEST INTEGRATION**
+## 4. Set Vercel environment variables
 
-### **Step 6A: Add Your Keys to script.js**
-1. In Supabase dashboard: Copy your **Project URL** and **Anon Key**
-2. In `script.js`, replace:
-   - `YOUR_PROJECT_REF` → Your actual project ref (e.g., `abcdefg123`)
-   - `YOUR_ANON_KEY_HERE` → Your actual anon key
+**Vercel → your project → Settings → Environment Variables.** Add all three for
+Production, Preview, and Development:
 
-### **Step 6B: Test in Supabase First**
-
-Go to SQL Editor and run:
-
-```sql
-SET LOCAL role anon;
-INSERT INTO public.inquiries (name, email, case_type, priority, message)
-VALUES ('Test User', 'test@example.com', 'cyber', 'standard', 'This is a test')
-RETURNING id, created_at;
+```
+SUPABASE_URL=https://<ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service_role key>
+ADMIN_TOKEN=<the random string>
 ```
 
-✅ If this returns an ID → RLS is working!
-❌ If error → Check your policies
-
-### **Step 6C: Deploy & Test**
-1. Push changes to GitHub:
-   ```bash
-   git add index.html script.js SUPABASE_SETUP.md
-   git commit -m "Add Supabase integration with corrected schema"
-   git push origin main
-   ```
-
-2. Open your website: **https://nexus-forensics-one.vercel.app**
-
-3. Scroll to **CONTACT** section
-
-4. Fill the form:
-   - Name: `Test User`
-   - Email: `test@example.com`
-   - Organization: `Test Org`
-   - Case Type: `Cybercrime Investigation`
-   - Priority: `Standard`
-   - Message: `This is a test message`
-
-5. Click **"TRANSMIT SECURELY"**
-
-6. Button should show: `✓ TRANSMISSION COMPLETE` ✅
-
-### **Step 6D: Verify in Supabase**
-1. Go to Supabase Dashboard
-2. Click **"Table Editor"** (left sidebar)
-3. Select **"inquiries"** table
-4. You should see your test row! 🎉
+Redeploy afterwards — Vercel only injects env vars into new deployments.
 
 ---
 
-## **7. TROUBLESHOOTING**
+## 5. Set GitHub Actions secrets
 
-### **Problem: "Cannot find Supabase"**
-**Solution:** Make sure you added the Supabase script to `index.html` before `</head>`
+**GitHub → repo → Settings → Secrets and variables → Actions → New repository secret:**
 
-### **Problem: "column does not exist"**
-**Solution:** Run the DROP TABLE query first, then recreate with the corrected SQL above
+| Secret | Where to get it |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | https://supabase.com/dashboard/account/tokens |
+| `SUPABASE_PROJECT_REF` | the `<ref>` in `https://<ref>.supabase.co` |
+| `SUPABASE_DB_PASSWORD` | the password from step 1 |
 
-### **Problem: "401 Unauthorized"**
-**Solution:** Your anon key is wrong. Check:
-1. You're using the correct key (not service_role key)
-2. No extra spaces in the key
-3. RLS policies allow INSERT for anonymous users
+Without all three the workflow fails fast with a clear error instead of silently
+doing nothing.
 
-### **Problem: "Row-level security violation"**
-**Solution:** Your RLS policy is too restrictive. Run this SQL:
-```sql
-DROP POLICY IF EXISTS "Allow public inserts" ON public.inquiries;
-CREATE POLICY "Allow public inserts" ON public.inquiries
-  FOR INSERT WITH CHECK (true);
+---
+
+## 6. Test it
+
+**Submit (public):**
+
+```bash
+curl -i -X POST https://<your-site>/api/inquiries \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Test User","email":"test@example.com","case_type":"cyber","priority":"standard","message":"hello"}'
 ```
 
-### **Problem: Data not appearing in table**
-**Solution:** 
-1. Check browser console (F12) for errors
-2. Check Supabase logs: **"Logs"** tab in dashboard
-3. Verify table name is exactly `inquiries` (lowercase)
+Expect `201 {"ok":true}`. A malformed email returns `400`; the sixth submission
+within a minute from one IP returns `429`.
 
-### **Problem: CORS errors**
-**Solution:** Supabase handles CORS automatically. If you get CORS errors:
-1. Clear browser cache (Ctrl+Shift+Del)
-2. Try in incognito/private window
-3. Check that your Supabase URL is correct
+**Read back (admin):**
 
----
+```bash
+curl -s "https://<your-site>/api/inquiries?limit=10" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
 
-## **✅ COMPLETION CHECKLIST**
+Expect `200 {"data":[...]}`. Without the header: `401`.
 
-- [ ] Supabase account created
-- [ ] Project created
-- [ ] Old `inquiries` table dropped
-- [ ] New `inquiries` table created with correct columns
-- [ ] RLS policies added
-- [ ] API URL copied
-- [ ] Anon key copied
-- [ ] Supabase script added to HTML
-- [ ] script.js updated with keys
-- [ ] Contact form handler replaced
-- [ ] Code pushed to GitHub
-- [ ] SQL test passed (anon insert works)
-- [ ] Test form submission works
-- [ ] Data appears in Supabase table
+**Confirm anon is locked out** — this must never return rows:
+
+```bash
+curl -s "https://<ref>.supabase.co/rest/v1/inquiries?select=*" \
+  -H "apikey: <anon key>"
+```
 
 ---
 
-## **🎯 NEXT STEPS**
+## 7. Reading submissions day to day
 
-Once form is working:
-
-1. **View Submissions:** Go to Supabase → Table Editor → inquiries
-2. **Export Data:** Click "Download" to export as CSV
-3. **Set Alerts:** Add email notifications when new inquiry arrives
-4. **Monitor:** Check Supabase logs for any errors
+Use the **Table Editor** in the Supabase dashboard, or the admin endpoint above.
+There is no in-app admin UI. Adding one means creating authenticated users and a
+matching `SELECT` policy — *not* re-opening `anon`.
 
 ---
 
-## **❓ NEED HELP?**
+## Security model
 
-- Supabase Docs: https://supabase.com/docs
-- Discord Community: https://discord.supabase.io
-- GitHub Issues: https://github.com/2410305056-tech/Nexus-forensics/issues
+- `anon` and `authenticated` have **no** policies and **no** grants on either table
+- The 60-second / 5-submission throttle is in-memory and per serverless instance.
+  It blunts casual abuse but is not a hard guarantee. For real protection put
+  hCaptcha or Cloudflare Turnstile in front of the form
+- Rate limiting keys off `x-forwarded-for`, which a determined attacker can vary
+- The honeypot field (`contact-website`) catches naive bots only
+- All input is length-capped and the email format-checked in both the function and
+  the database `CHECK` constraints
 
-**Status:** Last updated August 1, 2026 ✓
+---
+
+## Troubleshooting
+
+**`500 Server is not configured`** — env vars missing, or the deployment predates
+them. Redeploy.
+
+**`502 Could not store submission`** — check the function logs. Usually a wrong
+`service_role` key, or a migration that has not been applied.
+
+**`429 Too many submissions`** — throttle tripped. Wait a minute, or raise
+`MAX_PER_WINDOW` in `api/inquiries.js`.
+
+**Form shows "Transmission failed"** — open the browser console and Network tab. A
+404 means `/api/inquiries` was not deployed: check that `api/inquiries.js` is
+committed and that `vercel.json` has no `builds` block forcing static-only output.
+
+**Workflow fails on "Verify required secrets"** — one of the three Actions secrets
+is missing.
+
+**`supabase db push` reports nothing to do** — the migration is already applied.
+That is success.

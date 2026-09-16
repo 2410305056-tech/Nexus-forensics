@@ -13,7 +13,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <meta name="theme-color" content="#00ff88">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -884,6 +883,8 @@
                     </div>
                 </div>
                 <form id="contact-form" class="contact-form reveal-right">
+                    <!-- Honeypot: hidden from users; any value here means a bot. -->
+                    <input type="text" id="contact-website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;">
                     <div class="form-row">
                         <div class="form-group">
                             <label for="contact-name">IDENTIFICATION</label>
@@ -996,12 +997,6 @@
         <span class="btt-label">TOP</span>
     </button>
 
-    <script type="module">
-      // Expose env vars for the Supabase client (static site, no build step)
-      window.VITE_SUPABASE_URL = 'https://ylbidjnuxghyzrngehwz.supabase.co';
-      window.VITE_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlsYmlkam51eGdoeXpybmdlaHd6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5MTY1MzQsImV4cCI6MjEwMTQ5MjUzNH0.TxXypk3xIJgnn0DLJLfF8Ahx5NuUuTwupgchCVbetHE';
-    </script>
-    <script src="supabase-client.js"></script>
     <script src="script.js"></script>
     <script type="text/javascript">
       (function(d, t) {

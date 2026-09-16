@@ -499,7 +499,7 @@ document.querySelectorAll('.faq-question').forEach(btn => {
 });
 
 // ─────────────────────────────────────────────
-// CONTACT FORM — submits to Supabase
+// CONTACT FORM — submits to /api/inquiries
 // ─────────────────────────────────────────────
 const contactForm = document.getElementById('contact-form');
 if (contactForm) {
@@ -530,23 +530,26 @@ if (contactForm) {
             return;
         }
 
-        const supabase = window.nexusSupabase;
-
-        if (!supabase) {
-            showFormMessage(formMsg, 'Connection to database failed. Please try again later.', 'error');
-            btnText.textContent = original;
-            btn.style.pointerEvents = '';
-            return;
-        }
+        // Honeypot: hidden from users, so any value here means a bot.
+        formData.website = document.getElementById('contact-website')?.value || '';
 
         btnText.textContent = 'TRANSMITTING...';
 
         try {
-            const { error } = await supabase
-                .from('inquiries')
-                .insert([formData]);
+            const res = await fetch('/api/inquiries', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData),
+            });
 
-            if (error) throw error;
+            if (!res.ok) {
+                let detail = 'Transmission failed.';
+                try {
+                    const payload = await res.json();
+                    if (payload && payload.error) detail = payload.error;
+                } catch { /* non-JSON error body */ }
+                throw new Error(detail);
+            }
 
             btnText.textContent = '✓ TRANSMISSION COMPLETE';
             btn.style.background = 'rgba(0, 255, 136, 0.15)';
